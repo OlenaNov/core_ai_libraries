@@ -1,0 +1,2 @@
+# Guida
+Python è **facile**.
