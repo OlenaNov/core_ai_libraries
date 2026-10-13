@@ -20,7 +20,7 @@ def generate_and_save_email(file_path: Path) -> Optional[str]:
 
     prompt = (
         "Genera una mail di conferma della partecipazione del corso di Intelligenza Artificiale, "
-        "indicando che il calendario ed il programma didattico sono in allegato con la lunghezza massima di 300 caratteri."
+        "indicando che il calendario ed il programma didattico sono in allegato con la lunghezza massima di 500 caratteri."
     )    
     instruction = "Usa il tono cordiale e gentile"
 
@@ -39,7 +39,7 @@ def generate_and_save_email(file_path: Path) -> Optional[str]:
 
         doc = Document()
 
-        doc.add_heading(f"Sezione: {heading_text}", level=2)
+        doc.add_heading(f"{heading_text}", level=2)
 
         for paragraph_text in body_paragraphs:
             if paragraph_text.strip():
@@ -55,7 +55,7 @@ def generate_and_save_email(file_path: Path) -> Optional[str]:
         return None
 
 
-def print_email_confirm(content: str) ->None:
+def print_email_confirm(content: str) -> None:
     """Stampa a schermo il contenuto dell'email formattato."""
     if content:
         print(content)
