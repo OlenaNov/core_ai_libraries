@@ -1,8 +1,54 @@
 
 from pathlib import Path
+from typing import Dict, List, Any
 from docx import Document
 
-report_dict = [
+
+def create_report_table(file_path: Path, data: List[Dict[str, Any]]) -> None:
+    """Crea un documento Word, genera una tabella basata sui dati forniti
+    e la salva nel percorso specificato.
+
+    Args:
+        file_path (Path): Il percorso completo in cui salvare il file Word.
+        data (List[Dict[str, Any]]): Lista di dizionari contenuti le righe del report.
+
+    Raises:
+        ValueError: Se la lista dei dati è vuota.
+        OSError: Se si verificano problemi durante il salvataggio del file.
+    """
+    if not data:
+        raise ValueError("Impossibile generare la tabella: la lista dei dati è vuota.")
+    
+    doc = Document()
+
+    keys = list(data[0].keys())
+    
+    table = doc.add_table(rows=len(data) + 1, cols=len(keys))
+
+    header_cells = table.rows[0].cells
+    for col_idx, key in enumerate(keys):
+        header_cells[col_idx].text = str(key)
+
+
+    for row_idx, item in enumerate(data, start=1):
+        row_cells = table.rows[row_idx].cells
+        for col_idx, key in enumerate(keys):
+
+            row_cells[col_idx].text = str(item.get(key, ""))
+
+    try:
+        doc.save(file_path)
+        print(f"Report salvato con successo in {file_path.resolve()}")
+    except OSError as e:
+        print(f"Errore critico durante il salvataggio del file: {e}")
+        raise
+
+def main() -> None:
+    
+    folder = Path(__file__).parent
+    file_path = folder / 'report_table.docx'
+
+    report_data = [
     {"Item": "Monitor", "Price_€": 139, "Quantity": 13},
     {"Item": "Keyboard", "Price_€": 45, "Quantity": 25},
     {"Item": "Mouse", "Price_€": 25, "Quantity": 40},
@@ -15,33 +61,10 @@ report_dict = [
     {"Item": "External SSD", "Price_€": 110, "Quantity": 20},
 ]
 
-
-def create_table(file_path: Path) -> None:
-
-    doc = Document()
-    keys = ["Item", "Price_€", "Quantity"]
-    
-    table = doc.add_table(rows=len(report_dict) + 1, cols=len(keys))
-
-    header_cells = table.rows[0].cells
-    for i, key in enumerate(keys):
-        header_cells[i].text = str(key)
-
-
-    for idx, item in enumerate(report_dict, start=1):
-        row_cells = table.rows[idx].cells
-
-        for k, key in enumerate(keys):
-            row_cells[k].text = str(item[key])
-            print(f"Riga {idx}, Colonna {k}: {item[key]}")
-    doc.save(file_path)
-
-
-def main() -> None:
-    folder = Path(__file__).parent
-    docx_path = folder / 'report_table.docx'
-
-    create_table(docx_path)
+    try:
+        create_report_table(file_path, report_data)
+    except Exception as e:
+        print(f"Processo interrotto a causa di un errore: {e}")
 
 
 if __name__ == "__main__":
