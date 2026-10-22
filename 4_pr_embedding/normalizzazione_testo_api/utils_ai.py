@@ -57,3 +57,13 @@ def tokenizza(testo):
 tutti = [t for d in DOCUMENTI for t in tokenizza(d)]
 vocabolario = sorted(set(tutti))
 indici = {p: i for i, p in enumerate(vocabolario)}
+
+def vettore_conteggio(testo, indici):
+    v = [0] * len(indici)
+    for t in tokenizza(testo):
+        if t in indici:
+            v[indici[t]] += 1
+    return v
+
+v2 = vettore_conteggio("reso reso reso gratuito", indici)
+
