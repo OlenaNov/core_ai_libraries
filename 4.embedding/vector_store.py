@@ -1,6 +1,6 @@
 
 """
-Advanced Vector Store Module
+Advanced Vector Store Module 
 ------------------------------------
 Implements an in-memory vector database with CRUD operations, metadata aggregation, 
 vector normalization, dot product, Euclidean distance, and cosine similarity rankings.
@@ -133,18 +133,18 @@ def update_record(database: Dict[int, Dict[str, Any]], record_id: int, text: Opt
     """Updates specific fields of an existing record with strict validation."""
     if record_id not in database:
         raise ValueError(f"ID {record_id} non trovato non trovato nel database.")
-    update_record = dict(database[record_id])
+    updated_record = dict(database[record_id])
 
     if text is not None:
-        update_record["testo"] = text
+        updated_record["testo"] = text
     if vector is not None:
         if len(vector) != VECTOR_DIMENSION:
             raise ValueError(f"Dimensione vettoriale errata: {len(vector)} anziché {VECTOR_DIMENSION}.")
-        update_record["vettore"] = vector
-    if neta is not None:
-        update_record["meta"] = meta
+        updated_record["vettore"] = vector
+    if meta is not None:
+        updated_record["meta"] = meta
 
-    database[record_id] = update_record
+    database[record_id] = updated_record
 
 
 def count_by_metadata(database: Dict[int, Dict[str, Any]], field:str) -> Dict[Any, int]:
@@ -190,6 +190,10 @@ def calculate_cosine_similarity(u: List[float], v: List[float]) -> float:
     return dot_product / (norm_u * norm_v)
 
 
+def coseno(u: List[float], v: List[float]) -> float:
+    return calculate_cosine_similarity(u, v)
+
+
 def calculate_dot_product(u: List[float], v: List[float]) -> float:
     """Calculates the dot product of two vectors."""
     return sum(a * b for a, b in zip(u, v))
@@ -198,6 +202,22 @@ def calculate_dot_product(u: List[float], v: List[float]) -> float:
 def calculate_euclidean_distance(u: List[float], v: List[float]) -> float:
     """Calculates the Euclidean distance between two vectors."""
     return math.sqrt(sum((a - b) ** 2 for a, b in zip(u, v)))
+
+
+def search_top_k(database: Dict[int, Dict[str, Any]], query: List[float], k: int=3) -> List[Tuple[float, int, str]]:
+    """
+    Compares a query vector against all records in the database and returns
+    the top-k most similar records as tuples of (score, id, text).
+    Applies deterministic tie-breaking: highest score first, then lowest record ID.
+    """
+    scores = []
+    for record in database.values():
+        score = calculate_cosine_similarity(query, record["vettore"])
+        scores.append((score, record["id"], record["testo"]))
+
+    scores.sort(key = lambda x: (-x[0], x[1]))
+    return scores[:k]
+
 
 def main() -> None:
     """Demonstrates database operations, normalization, and similarity metrics."""
@@ -252,6 +272,26 @@ def main() -> None:
     cat_counts = count_by_metadata(db, "categoria")
     print(f"Conteggio per categoria: {cat_counts}")
     print(f"Categorie ordinate alfabeticamente: {sorted(cat_counts.keys())}")
+
+
+    print("\n---6. Test Ricerca Esatta e Tie-Breaking ---")
+    print("Risultati per query [0.9, 0.1, 0.0] (k=3):")
+    for score, record_id, text in search_top_k(db, [0.9, 0.1, 0.0], k=3):
+        print(f"  Punteggio: {round(score, 3)} | ID: {record_id} | Testo: {text}")
+
+    print("\nID dei top-2 risultati per query [0.1, 0.1, 0.9]:")
+    print([record_id for score, record_id, text in search_top_k(db, [0.1, 0.1, 0.9], k=2)])
+
+    print("\nTest archivio gemelli (ID 1 e 2 con stesso vettore):")
+    twins_db = dict(db)
+    twins_db[1] = dict(db[1], vettore=[0.5, 0.5, 0.0])
+    twins_db[2] = dict(db[2], vettore=[0.5, 0.5, 0.0])
+    test_query = [1.0, 1.0, 0.0]
+
+    print("Risultati ordinati con tie-breaking (vince l'ID più basso a parità di punteggio):")
+    print([(round(score, 2), record_id) for score, record_id, text in search_top_k(twins_db, test_query, k=3)])
+
+
 
 if __name__ == "__main__":
     main()
