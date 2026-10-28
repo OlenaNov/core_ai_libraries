@@ -81,3 +81,23 @@ CHUNKS = [
     {"id": 2, "fonte": "spedizioni.txt", "testo": "La spedizione costa cinque euro e la consegna avviene in tre giorni."},
     {"id": 3, "fonte": "pagamenti.txt", "testo": "Si accettano carta di credito e bonifico bancario."},
 ]
+
+indice = [dict(c, vettore=embedding_testo(c["testo"])) for c in CHUNKS]
+
+
+# per exc. 8 (pr.10)
+
+def cerca(domanda, indice, k=2):
+    q = embedding_testo(domanda)
+    risultati = []
+    for d in indice:
+        punteggio = sum(a * b for a, b in zip(q, d["vettore"]))
+        risultati.append((punteggio, d))
+    risultati.sort(key=lambda r: r[0], reverse=True)
+    return risultati[:k]
+
+# per exc. 9 (pr.11)
+
+contesto = ("[1] Il rimborso arriva entro sette giorni dal ricevimento del reso. (fonte: rimborsi.txt)\n"
+            "[2] Il reso è gratuito entro quattordici giorni dalla consegna. (fonte: resi.txt)")
+domanda = "Entro quanti giorni arriva il rimborso?"
