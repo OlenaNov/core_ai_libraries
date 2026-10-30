@@ -1,0 +1,145 @@
+
+"""
+Production-Grade RAG Pipeline Powered by Google Gemini AI.
+"""
+
+import logging
+import math
+import os
+from typing import Any, Dict, List, Optional, Tuple
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+from google.genai.errors import ServerError
+
+
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+)
+logger = logging.getLogger("GeminiRAGSystem")
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Gemini Client
+client = genai.Client()
+
+# Configuration Constants
+MODEL_TEXT = "gemini-3.5-flash"
+MODEL_EMBEDDING = "gemini-embedding-2"
+DIMENSION = 768
+
+# ==========================================
+# 1. EMBEDDING & UTILITIES ENGINE
+# ==========================================
+
+def compute_embedding(text: str, dim: int = DIMENSION) -> List[float]:
+    """
+    Compute a numerical embedding vector for a given text using Gemini API.
+
+    Args:
+        text (str): Input text string.
+        dim (int): Output vector dimensionality.
+
+    Returns:
+        List[float]: Embedding vector values.
+    """
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Input text must be a non-empty string.")
+
+    try:
+        response = client.models.embed_content(
+            model=MODEL_EMBEDDING,
+            contents=text,
+            config=types.EmbedContentConfig(output_dimensionality=dim),
+        )
+        return response.embeddings[0].values
+    except Exception as e:
+        logger.error(f"Failed to generate embedding: {e}")
+        raise
+
+
+def compute_document_embedding(title: str, text: str, dim: int = DIMENSION) -> List[float]:
+    """Compute embedding for document chunks using title-text semantic formatting."""
+    formatted_content = f"title: {title} | text: {text}"
+    return compute_embedding(formatted_content, dim=dim)
+
+
+def compute_query_embedding(query: str, dim: int = DIMENSION) -> List[float]:
+    """Compute embedding for user queries optimized for retrieval tasks."""
+    cleaned_query = " ".join(query.split())
+    if not cleaned_query:
+        raise ValueError("Query cannot be empty or contain only whitespace.")
+    
+    formatted_query = f"task: question-answering | query: {cleaned_query}"
+    return compute_embedding(formatted_query, dim=dim)
+
+
+def check_vector_compatibility(vector_a: List[float], vector_b: List[float]) -> bool:
+    """Validate that two embedding vectors share identical dimensionality."""
+    if len(vector_a) != len(vector_b):
+        raise ValueError(f"Vector dimensionality mismatch: {len(vector_a)} vs {len(vector_b)}")
+    return True
+
+
+def estimate_tokens(text:str) -> int:
+    """Estimate token count using standard ~4 characters per token heuristic."""
+    return math.ceil(len(text) / 4)
+
+
+# ==========================================
+# 2. OFFLINE INDEXING PIPELINE
+# ==========================================
+
+def build_vector_index(chunks: List[Dict[str, Any]], dim: int = DIMENSION) -> List[Dict[str, Any]]:
+    """Build vector index by calculating embeddings for all document chunks."""
+    index = []
+    for chunk in chunks:
+        vector = compute_document_embedding(chunk["source"], chunk["text"], dim=dim)
+        index.append({**chunk, "vector": vector})
+
+        logger.info(f"Vector index successfully built with {len(index)} items.")
+        return index
+
+
+def add_chunk_to_index(
+        index: List[Dict[str, Any]],
+        source: str,
+        text: str,
+        dim: int = DIMENSION
+) -> int:
+    """Dynamically add a new chunk and its embedding to the existing index."""
+    if not source or not text:
+        raise ValueError("Source and text cannot be empty.")
+
+    new_id = len(index)
+    vector = compute_document_embedding(source, text, dim=dim)
+
+    new_chunk = {
+        "id": new_id,
+        "source": source,
+        "text": text,
+        "vector": vector
+    }
+    index.append(new_chunk)
+    logger.info(f"Added new chunk ID {new_id} from source '{source}' to index.")
+    return new_id
+
+
+# ==========================================
+# 3. ONLINE QUERY & RETRIEVAL PIPELINE
+# ==========================================
+
+def search_similar_chunks(query: str, index: List[Dict[str, Any]], k: int = 2) -> List[Tuple[float, Dict[str, Any]]]:
+    """Retrieve top-k similar chunks using dot product over normalized vectors."""
+    query_vector = compute_query_embedding(query)
+    results = []
+
+    for item in index:
+        check_vector_compatibility(query_vector, item["vector"])
+        
+
+
+

@@ -78,3 +78,19 @@ def elenca_file(cartella, estensioni=(".txt", ".md")):
         if percorso.is_file() and percorso.suffix.lower() in estensioni:
             trovati.append(percorso)
     return sorted(trovati)
+
+
+
+    
+    # SPIEGAZIONI   
+# . Il client e embedding_documento dell’esercizio 1 (con il 
+# contatore delle chiamate), e tre chunk: due normali e uno 
+# fatto di soli spazi (un chunk difettoso). 
+# Il titolo del documento è il nome del file.
+
+
+CHUNKS = [
+    {"id": "doc-resi_000", "fonte": "resi.txt", "testo": "Il reso è gratuito entro quattordici giorni dalla consegna."},
+    {"id": "doc-resi_001", "fonte": "resi.txt", "testo": "Il prodotto deve essere integro."},
+    {"id": "doc-vuoto_000", "fonte": "vuoto.txt", "testo": "   "},
+]
