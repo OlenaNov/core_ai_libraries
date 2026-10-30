@@ -93,3 +93,76 @@ def id_documento(percorso_relativo):
 
 def impronta_testo(testo):
     return hashlib.sha256(testo.encode("utf-8")).hexdigest()
+
+
+#   SPIEGAZIONE
+# •	Counter è un contenitore che conta gli elementi.
+# •	PAGINE simula un PDF di 3 pagine già estratte come testo. Ogni pagina ha una riga che si ripete (Studio Rossi - Riservato, l’intestazione), il contenuto vero e una riga Pagina N con il numero.
+
+from collections import Counter
+
+PAGINE = [
+    "Studio Rossi - Riservato\nCondizioni di reso\nIl reso è gratuito.\nPagina 1",
+    "Studio Rossi - Riservato\nSpedizioni\nConsegna in 3 giorni.\nPagina 2",
+    "Studio Rossi - Riservato\nPagamenti\nSi accetta carta.\nPagina 3",
+]
+
+altre = [
+    "Studio Rossi - Riservato\nSezione A\nTesto 1\nPagina 1",
+    "Studio Rossi - Riservato\nSezione B\nTesto 2\nPagina 2",
+    "Altro Header\nSezione C\nTesto 3\nPagina 3",  # L'intestazione "Studio Rossi" appare solo in 2 pagine su 3
+]
+
+#    SPIEGAZIONE 7
+   
+#    •	Due documenti di prova: RESI, completo, e BOZZA, senza data né versione. OBBLIGATORI elenca i metadati senza i quali un documento non va indicizzato.
+# •	separa_intestazione assume la struttura titolo, riga versione/data, corpo: restituisce il titolo (togliendo un eventuale # di Markdown), la riga della versione e il corpo (le righe restanti unite in una sola). Se le righe sono meno di 3, solleva un errore.
+# •	estrai_metadati cerca nella riga della versione, con espressioni regolari, una data gg/mm/aaaa (che riordina in formato ISO aaaa-mm-gg) e un numero di versione. Se non li trova usa None.
+
+import re
+
+RESI = "Politica dei resi\nVersione 2.1 - 03/10/2026\nIl reso è gratuito entro quattordici giorni."
+BOZZA = "Note interne\nBozza senza data né versione\nTesto da rivedere."
+OBBLIGATORI = ("titolo", "data")
+
+def separa_intestazione(testo):
+    righe = testo.splitlines()
+    if len(righe) < 3:
+        raise ValueError("intestazione mancante")
+    return righe[0].lstrip("# ").strip(), righe[1].strip(), " ".join(righe[2:])
+
+def estari_metadati(titolo, riga_versione):
+    data = re.search(r"(\d{2})/(\d{2})/(\d{4})", riga_versione)
+    versione = re.search(r"[Vv]ersione\s+(\d+(?:\.\d+)*)", riga_versione)
+    return {
+        "titolo": titolo,
+        "versione": versione.group(1) if versione else None,
+        "data": f"{data.group(3)}-{data.group(2)}.{data.group(1)}" if data else None
+    }
+
+
+
+#     SPIEGAZIONE
+
+# •	CORPO è il testo di un documento (3 frasi) e METADATI i suoi metadati.
+# •	crea_chunk divide il corpo in frasi e le raggruppa in chunk senza superare max_car caratteri: se aggiungere una frase supererebbe il limite, 
+# chiude il chunk e ne apre un altro. Per ogni chunk crea un dizionario che eredita i metadati del documento (dict(metadati, ...)) e aggiunge id (doc_id + numero a tre cifre, :03d), 
+# doc_id e testo.
+
+CORPO = "Il reso è gratuito entro quattordici giorni dalla consegna. Il prodotto deve essere integro. Il rimborso arriva entro sette giorni."
+METADATI = {"fonte": "resi.txt", "titolo": "Politica dei resi", "versione": "2.1"}
+
+def crea_chunk(doc_id, corpo, metadati, max_car=80):
+    frasi = [f.strip() + "." for f in corpo.split(".") if f.strip()]
+    gruppi, corrente = [], ""
+    for frase in frasi:
+        if corrente and len(corrente) + 1 + len(frase) > max_car:
+            gruppi.append(corrente)
+            corrente = frase
+        else:
+            corrente = (corrente + " " + frase).strip()
+    if corrente:
+        gruppi.append(corrente)
+    return [dict(metadati, id=f"{doc_id}_{i:03d}", doc_id=doc_id, testo=t)
+            for i, t in enumerate(gruppi)]
+

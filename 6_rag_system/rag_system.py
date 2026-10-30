@@ -8,6 +8,8 @@ import logging
 import math
 import re
 from typing import Any, Dict, List, Optional, Tuple
+import uuid
+
 
 # Configure structured logging
 logging.basicConfig(
@@ -115,10 +117,13 @@ def chunk_documents(documents: List[Dict[str, str]]) -> List[Dict[str, Any]]:
 
         sentences = doc["text"].split(".")
         for sentence in sentences:
-            cleaned_sentence = sentences.strip()
+            cleaned_sentence = sentence.strip()
             if cleaned_sentence:
+                content_identifier = f"{doc['source']}:{cleaned_sentence}"
+                chunk_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, content_identifier))
+                
                 chunks.append({
-                    "id": len(chunks),
+                    "id": chunk_id,
                     "source": doc["source"],
                     "text": cleaned_sentence + "."
                 })
@@ -126,7 +131,7 @@ def chunk_documents(documents: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     return chunks
 
 
-def buid_vector_index(chunks: List[Dict[str, Any]], dim: int = 1024) -> List[Dict[str, Any]]:
+def build_vector_index(chunks: List[Dict[str, Any]], dim: int = 1024) -> List[Dict[str, Any]]:
     """
     Build the vector index by computer embeddings for all document chunks.
     """
@@ -147,7 +152,7 @@ def add_chunk_to_index(index: List[Dict[str, Any]], source: str, text: str, dim:
         raise ValueError("Source and text cannot be empty when adding a chunk.")
 
     new_id = len(index)
-    vector = compute_text_embedding(testo, dim=dim)
+    vector = compute_text_embedding(text, dim=dim)
 
     new_chunk = {
         "id": new_id,
@@ -164,9 +169,136 @@ def add_chunk_to_index(index: List[Dict[str, Any]], source: str, text: str, dim:
 # 3. ONLINE QUERY & RETRIEVAL PIPELINE
 # ==========================================
 
+def search_similar_chunks(query: str, index: List[Dict[str, Any]], k: int = 2) -> List[Tuple[float, Dict[str, Any]]]:
+    """
+    Retrieve the top-k most popular chunks using cosine similarity (dot product on normalized vectors).
+    """
+    query_vector = compute_query_embedding(query)
+    results = []
+
+    for item in index:
+        check_vector_compatibility(query_vector, item["vector"])
+        score = (sum(q * d for q, d in zip(query_vector, item["vector"])))
+        results.append((score, item))
+
+    results.sort(key=lambda x: x[0], reverse=True)
+    return results[:k]
 
 
+def fit_within_budget(retrieved_results: List[Tuple[float, Dict[str, Any]]], max_tokens: int) -> Tuple[List[Tuple[float, Dict[str, Any]]], int]:
+    """
+    Filter retrieved chunks to fit within the LLM context token budget.
+    """
+
+    selected =[]
+    tokens_used = 0
+
+    for score, chunk in retrieved_results:
+        cost = estimate_tokens(chunk["text"])
+        if tokens_used + cost > max_tokens:
+            logger.warning(f"Token budget exceeded ({tokens_used + cost}/{max_tokens}). Truncating retrieval.")
+            break
+        selected.append((score, chunk))
+        tokens_used += cost
+
+    return selected, tokens_used
 
 
+def build_context_string(retrieved_results: List[Tuple[float, Dict[str, Any]]]) -> str:
+    """Format retrieved chunks into a structured context block for the prompt."""
+    if not retrieved_results:
+        return "Nessun documento trovato."
+
+    lines = []
+    for rank, (score, chunk) in enumerate(retrieved_results, start=1):
+        lines.append(f"[{rank}] {chunk["text"]} (source: {chunk["source"]})")
+
+    return "\n".join(lines)
 
 
+def build_prompt(query: str, context: str) -> str:
+    """Compose the final prompt containing system instructions, context and query."""
+    return (
+        "Rispondi usando solo il contesto. Se l'informazione non c'è, rispondi \"Non lo so\".\n\n"
+        f"Contesto:\n{context}\n\n"
+        f"Domanda: {query}"
+    )
+
+
+def mock_llm_generator(prompt: str) -> str:
+    """
+    Simulate a generative LLM responding strictly base on retrieved context lines.
+    """
+    lines = [line for line in prompt.splitlines() if line.startswith("[")]
+    if not lines:
+        return "Non lo so."
+
+    # Extract text from the top ranked context line
+    text = lines[0].split("] ", 1)[1].split(" (source", 1)[0]
+    return f"Secondo i documenti: {text}"
+
+
+# ==========================================
+# 4. RAG SYSTEM ORCHESTRATOR
+# ==========================================
+
+class RAGPipeline:
+    """High-level orchestration class managing both Indexing and Queries phases."""
+
+    def __init__(self, raw_documents: List[Dict[str, str]], embedding_dim: int = 1024) -> None:
+        self.embedding_dim = embedding_dim
+        logger.info("Initializing RAG Pipeline...")
+
+        # Phase 1: Indexing (Offline)
+        chunks = chunk_documents(raw_documents)
+        self.index = build_vector_index(chunks, dim=self.embedding_dim)
+        logger.info(f"Indexing completed. Total indexed chunks: {len(self.index)}")
+
+    def query(self, user_query: str, top_k: int = 2, max_tokens: int = 200) -> str:
+        """
+        Execute the full online query pipeline:
+        Retrieval -> Budget Check -> Context Construction -> Prompt Assembly -> Generation.
+        """
+        logger.info(f"Processing query: '{user_query}'")
+
+        # Step 1 & 2: Retrieve similar chunks
+        raw_results = search_similar_chunks(user_query, self.index, k=top_k)
+
+        # Step 3: Enforce token budget limits
+        budget_results, _ = fit_within_budget(raw_results, max_tokens=max_tokens)
+
+        # Step 4: Build context & prompt
+        context = build_context_string(budget_results)
+        prompt = build_prompt(user_query, context)
+
+        # Step 5: Generate response
+        response = mock_llm_generator(prompt)
+        return response
+
+
+# ==========================================
+# EXECUTION DEMO
+# ==========================================
+
+def main() -> None:
+    # Knowledge Base
+    kb_documents = [
+        {"source": "resi.txt", "text": "Il reso è gratuito entro quattordici giorni dalla consegna. Il prodotto deve essere integro."},
+        {"source": "rimborsi.txt", "text": "Il rimborso arriva entro sette giorni dal ricevimento del reso. Il rimborso usa lo stesso metodo di pagamento."},
+        {"source": "spedizioni.txt", "text": "La spedizione costa cinque euro. La consegna avviene in tre giorni lavorativi."},
+        {"source": "pagamenti.txt", "text": "Si accetta carta di credito e bonifico bancario."},
+    ]
+
+    # Initialize RAG System
+    rag = RAGPipeline(kb_documents)
+
+    # Test Query
+    question = "Entro quanti giorni arriva il rimborso?"
+    answer = rag.query(question, top_k=2)
+
+    print("\n--- RISULTATO DELLA QUERY ---")
+    print(f"Domanda: {question}")
+    print(f"Risposta: {answer}")
+
+if __name__ == "__main__":
+    main()
