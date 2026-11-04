@@ -139,7 +139,78 @@ def search_similar_chunks(query: str, index: List[Dict[str, Any]], k: int = 2) -
 
     for item in index:
         check_vector_compatibility(query_vector, item["vector"])
-        
+        score = sum(q * d for q, d in zip(query_vector, item["vector"]))      
+        results.append((score, item))
+
+    results.sort(key=lambda x: x[0], reverse=True)
+    return results[:k]
+
+
+def retrieve_with_threshold(query: str, index: List[Dict[str, Any]], k: int = 2, threshold: float = 0.2) -> List[Tuple[float, Dict[str, Any]]]:
+    """Retrieve top-k similar chunks filtering out those bellow the similarity threshold."""
+    results = search_similar_chunks(query, index, k=k)
+    filtered = [r for r in results if r[0] >= threshold]
+    return filtered
+
+
+def fit_within_budget(retrieved_results: List[Tuple[float, Dict[str, Any]]], max_tokens: int) -> Tuple[List[Tuple[float, Dict[str, Any]]], int]:
+    """Filter retrieved chunks to fit within the Gemini model token budget."""
+    selected = []
+    tokens_used = 0
+
+    for score, chunk in retrieved_results:
+        cost = estimate_tokens(chunk["text"])
+        if tokens_used + cost > max_tokens:
+            logger.warning("Token budget exceeded. Truncating context.")
+            break
+        selected.append((score, chunk))
+        tokens_used += cost
+
+    return selected, tokens_used
+
+
+def build_context_string(retrieved_results: List[Tuple[float, Dict[str, Any]]]) -> str:
+    """Format retrieved results into a structured numbered context block."""
+    if not retrieved_results:
+        return "(Nessun documento trovato)"
+
+    lines = []
+    for number, (score, chunk) in enumerate(retrieved_results):
+        lines.append(f"[{number}] {chunk['testo']} (fonte: {chunk['fonte']})")
+
+    return "\n".join(lines)
+
+
+def build_prompt(query: str, context: str) -> str:
+    """Compose final prompt with instructions, retrieved context, and query."""
+    return (
+        "Rispondi usando solo il contesto fornito. Se l'informazione non è presente, rispondi \"Non lo so\".\n\n"
+        f"Contesto:\n{context}\n\n"
+        f"Domanda:\n{query}"
+    )
+
+
+def generate_answer(prompt: str) -> str:
+    """Send prompt to gemini AI model and return generated response text with error handling."""
+    try: 
+        response = client.models.generate_content(
+            model=MODEL_TEXT,
+            contents=prompt
+        )
+        return response.text
+    
+    except ServerError as e:
+        logger.error(f"Gemini server error: {e}")
+        return "[Errore temporaneo del server: il modello è sovraccarico. Riprova tra poco.]"
+    except Exception as e:
+        logger.error(f"Generation error: {e}")
+        raise
+
+
+# ==========================================
+# 4. GEMINI RAG ORCHESTRATOR
+# ==========================================
+
 
 
 
