@@ -100,8 +100,8 @@ def build_vector_index(chunks: List[Dict[str, Any]], dim: int = DIMENSION) -> Li
         vector = compute_document_embedding(chunk["source"], chunk["text"], dim=dim)
         index.append({**chunk, "vector": vector})
 
-        logger.info(f"Vector index successfully built with {len(index)} items.")
-        return index
+    logger.info(f"Vector index successfully built with {len(index)} items.")
+    return index
 
 
 def add_chunk_to_index(
@@ -176,7 +176,7 @@ def build_context_string(retrieved_results: List[Tuple[float, Dict[str, Any]]]) 
 
     lines = []
     for number, (score, chunk) in enumerate(retrieved_results):
-        lines.append(f"[{number}] {chunk['testo']} (fonte: {chunk['fonte']})")
+        lines.append(f"[{number}] {chunk['text']} (source: {chunk['source']})")
 
     return "\n".join(lines)
 
@@ -211,6 +211,53 @@ def generate_answer(prompt: str) -> str:
 # 4. GEMINI RAG ORCHESTRATOR
 # ==========================================
 
+class GeminiRAGPipeline:
+    """High-level orchestration class managing offline indexing and on-line Gemini RAG querying."""
+
+    def __init__(self, raw_chunks: List[Dict[str, Any]], dim: int = DIMENSION) -> None:
+        self.dim = dim
+        logger.info("Initializing Gemini RAG Pipeline...")
+        self.index = build_vector_index(raw_chunks, dim=self.dim)
+        logger.info("Gemini RAG Pipeline initialized successfully.")
+
+    def query(self, user_query: str, k: int = 2, threshold: float = 0.2, max_tokens: int = 500) -> str:
+        """<execute compete end-to-end RAG query flow."""
+        logger.info(f"Processing query: '{user_query}'")
+
+        # Retrieval with threshold filtering
+        retrieved = retrieve_with_threshold(user_query, self.index, k=k, threshold=threshold)
+
+        # Token budget enforcement 
+        budget_results, _ = fit_within_budget(retrieved, max_tokens=max_tokens)
+
+        # Context and prompt construction
+        context = build_context_string(budget_results)
+        prompt = build_prompt(user_query, context)
+
+        # Generation answer
+        answer = generate_answer(prompt)
+        return answer
 
 
+# ==========================================
+# EXECUTION DEMO
+# ==========================================
 
+if __name__ == "__main__":
+    CHUNKS = [
+        {"id": 0, "source": "resi.txt", "text": "Il reso è gratuito entro quattordici giorni dalla consegna."},
+        {"id": 1, "source": "rimborsi.txt", "text": "Il rimborso arriva entro sette giorni dal ricevimento del reso."},
+        {"id": 2, "source": "spedizioni.txt", "text": "La spedizione costa cinque euro e la consegna avviene in tre giorni."},
+        {"id": 3, "source": "pagamenti.txt", "text": "Si accettano carta di credito e bonifico bancario."},
+    ]
+
+    # Initialize 
+    rag_app = GeminiRAGPipeline(CHUNKS)
+
+    # Test Query
+    question = "Entro quanti giorni arriva il rimborso?"
+    final_answer = rag_app.query(question, k=2, threshold=0.1)
+
+    print("\n--- RISULTATO GEMINI RAG ---")
+    print(f"Domanda: {question}")
+    print(f"Risposta: {final_answer}")
